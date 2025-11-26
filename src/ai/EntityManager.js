@@ -1,11 +1,14 @@
+import * as THREE from 'three';
 import { NPC } from './NPC.js';
 import { CyberDog } from './CyberDog.js';
 
 export class EntityManager {
-    constructor(scene, camera) {
+    constructor(scene, camera, soundManager) {
         this.scene = scene;
         this.camera = camera;
+        this.soundManager = soundManager;
         this.entities = [];
+        this.currentTarget = null;
 
         this.init();
     }
@@ -15,7 +18,7 @@ export class EntityManager {
         for (let i = 0; i < 5; i++) {
             const x = (Math.random() - 0.5) * 20;
             const z = (Math.random() - 0.5) * 20;
-            this.spawnNPC({ x, y: 0, z });
+            this.spawnNPC({ x, y: 0, z }, this.soundManager);
         }
 
         // Spawn a Pet Dog
@@ -30,12 +33,12 @@ export class EntityManager {
     }
 
     spawnNPC(position) {
-        const npc = new NPC(this.scene, position, this.camera);
+        const npc = new NPC(this.scene, new THREE.Vector3(position.x, position.y, position.z), this.camera, this.soundManager);
         this.entities.push(npc);
     }
 
     spawnDog(position) {
-        const dog = new CyberDog(this.scene, position, this.camera);
+        const dog = new CyberDog(this.scene, new THREE.Vector3(position.x, position.y, position.z), this.camera, this.soundManager);
         this.entities.push(dog);
     }
 

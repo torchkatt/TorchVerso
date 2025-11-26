@@ -10,6 +10,7 @@ import { AuthManager } from '../firebase/AuthManager.js';
 import { NetworkManager } from '../game/NetworkManager.js';
 import { ChatManager } from '../game/ChatManager.js';
 import { AIManager } from '../ai/AIManager.js';
+import { SoundManager } from '../game/SoundManager.js';
 
 export class SceneManager {
     constructor(container) {
@@ -48,8 +49,10 @@ export class SceneManager {
             0.1,
             1000
         );
-        this.camera.position.set(0, 5, 10);
-        this.camera.lookAt(0, 0, 0);
+        // Start player OUTSIDE the city, on a street corner
+        // Height = 1.7 meters (realistic human eye level)
+        this.camera.position.set(-60, 1.7, -60);
+        this.camera.lookAt(0, 1.7, 0);
 
         // 3. Renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -61,6 +64,9 @@ export class SceneManager {
 
         // 4. Environment & Lighting
         this.environment = new Environment(this.scene);
+
+        // Audio System
+        this.soundManager = new SoundManager(this.camera);
 
         // 5. Controls
         // 5. Controls
@@ -75,8 +81,8 @@ export class SceneManager {
         // 8. World Generation
         this.worldGenerator = new WorldGenerator(this.scene);
 
-        // 9. AI / Entities
-        this.entityManager = new EntityManager(this.scene, this.camera);
+        // 9. AI / Entities (Pass SoundManager)
+        this.entityManager = new EntityManager(this.scene, this.camera, this.soundManager);
 
         // 10. Save System
         this.saveSystem = new SaveSystem(this);
@@ -121,6 +127,16 @@ export class SceneManager {
         // Resize Handler
         window.addEventListener('resize', () => this.onWindowResize());
 
+        // Mute Button
+        const muteBtn = document.getElementById('mute-btn');
+        if (muteBtn) {
+            muteBtn.addEventListener('click', () => {
+                const isMuted = this.soundManager.toggleMute();
+                muteBtn.textContent = isMuted ? '🔇' : '🔊';
+                muteBtn.classList.toggle('muted', isMuted);
+            });
+        }
+
         // Reset Button
         const resetBtn = document.getElementById('reset-btn');
         if (resetBtn) {
@@ -141,6 +157,9 @@ export class SceneManager {
 
         instructions.addEventListener('click', () => {
             this.controls.lock();
+            if (this.soundManager) {
+                this.soundManager.initAmbience();
+            }
         });
 
         this.controls.addEventListener('lock', () => {
