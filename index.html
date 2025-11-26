@@ -17,6 +17,7 @@
   <!-- UI Overlay -->
   <div id="ui-layer">
     <div id="crosshair"></div>
+    <div id="interaction-prompt">E - Interact</div>
     <div id="bubble-container"></div> <!-- Container for NPC dialogs -->
 
     <div id="hud-header">
@@ -75,6 +76,12 @@
         <div class="cost">25</div>
       </div>
     </div>
+  </div>
+
+  <!-- Chat UI -->
+  <div id="chat-container">
+    <div id="chat-history"></div>
+    <input type="text" id="chat-input" placeholder="Press ENTER to chat..." autocomplete="off">
   </div>
 
   <script type="module" src="/src/main.js"></script>

@@ -313,3 +313,106 @@ body {
   z-index: 101;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
+
+/* Chat UI */
+#chat-container {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  width: 350px;
+  height: 250px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  /* Let clicks pass through unless on elements */
+  z-index: 100;
+}
+
+#chat-history {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+  mask-image: linear-gradient(to top, black 80%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 80%, transparent 100%);
+}
+
+.chat-message {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 5px 10px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 14px;
+  backdrop-filter: blur(4px);
+  border-left: 3px solid #00ff88;
+  align-self: flex-start;
+  max-width: 90%;
+  word-wrap: break-word;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.chat-message .author {
+  font-weight: bold;
+  color: #00ff88;
+  margin-right: 5px;
+}
+
+#chat-input {
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #00ff88;
+  color: #fff;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  pointer-events: auto;
+  /* Enable interaction */
+  outline: none;
+  transition: all 0.2s;
+}
+
+#chat-input:focus {
+  background: rgba(0, 20, 0, 0.9);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Interaction Prompt */
+#interaction-prompt {
+  position: absolute;
+  top: 55%;
+  /* Slightly below center */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 90;
+  backdrop-filter: blur(4px);
+}
+
+#interaction-prompt.visible {
+  opacity: 1;
+}

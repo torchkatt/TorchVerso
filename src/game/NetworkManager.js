@@ -53,7 +53,7 @@ export class NetworkManager {
 
     addRemotePlayer(uid, data) {
         if (this.remotePlayers[uid]) return;
-        const player = new RemotePlayer(this.sceneManager.scene, uid, data);
+        const player = new RemotePlayer(this.sceneManager.scene, this.sceneManager.camera, uid, data);
         this.remotePlayers[uid] = player;
     }
 

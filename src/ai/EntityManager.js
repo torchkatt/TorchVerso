@@ -21,12 +21,12 @@ export class EntityManager {
         // Spawn a Pet Dog
         this.spawnDog({ x: 2, y: 0, z: 2 });
 
-        // Interaction Listener (Key E)
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyE') {
-                this.tryInteract();
-            }
-        });
+        // Interaction Listener (Key E) handled by SceneManager now
+        // document.addEventListener('keydown', (e) => {
+        //     if (e.code === 'KeyE') {
+        //         this.tryInteract();
+        //     }
+        // });
     }
 
     spawnNPC(position) {
@@ -52,9 +52,26 @@ export class EntityManager {
             }
         });
 
-        if (closest) {
+        if (closest && typeof closest.interact === 'function') {
             closest.interact();
+            this.currentTarget = closest; // Set as target for chat
+            console.log("Target locked:", closest);
+        } else {
+            this.currentTarget = null;
         }
+    }
+
+    getCurrentTarget() {
+        return this.currentTarget;
+    }
+
+    getInteractables() {
+        // Return array of meshes for raycasting
+        return this.entities.map(e => e.mesh).filter(m => m !== null);
+    }
+
+    getEntityByMesh(mesh) {
+        return this.entities.find(e => e.mesh === mesh);
     }
 
     update(delta, playerPosition) {

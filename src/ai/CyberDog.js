@@ -88,4 +88,12 @@ export class CyberDog {
             this.mesh.scale.y = 1 + Math.sin(Date.now() * 0.005) * 0.02;
         }
     }
+    interact() {
+        console.log("Woof! Woof!");
+        // Happy jump
+        this.mesh.position.y += 0.5;
+        setTimeout(() => {
+            this.mesh.position.y -= 0.5;
+        }, 200);
+    }
 }

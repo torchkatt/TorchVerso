@@ -8,6 +8,8 @@ import { EconomyManager } from '../game/EconomyManager.js';
 import { SaveSystem } from '../game/SaveSystem.js';
 import { AuthManager } from '../firebase/AuthManager.js';
 import { NetworkManager } from '../game/NetworkManager.js';
+import { ChatManager } from '../game/ChatManager.js';
+import { AIManager } from '../ai/AIManager.js';
 
 export class SceneManager {
     constructor(container) {
@@ -84,10 +86,21 @@ export class SceneManager {
             // When logged in:
             this.saveSystem.setUser(user); // Start saving
             this.networkManager.setUser(user); // Start multiplayer
+            this.chatManager.setUser(user); // Start chat
         });
 
         // 12. Network
         this.networkManager = new NetworkManager(this);
+
+        // 13. Chat
+        this.chatManager = new ChatManager(this);
+
+        // 14. AI Brain
+        this.aiManager = new AIManager();
+
+        // Ask for API Key (Temporary quick prompt)
+        // In production, use env vars or settings menu
+        this.aiManager.init("AIzaSyDO4DwYWz_xH4H0F02iIfy8qBA0TwepCjg");
 
         // Cleanup on exit
         window.addEventListener('beforeunload', () => {
@@ -164,6 +177,17 @@ export class SceneManager {
                 case 'ArrowRight':
                 case 'KeyD':
                     this.moveRight = true;
+                    break;
+                case 'KeyE':
+                    if (this.hoveredObject) {
+                        // Check if Entity
+                        const entity = this.entityManager.getEntityByMesh(this.hoveredObject);
+                        if (entity && typeof entity.interact === 'function') {
+                            entity.interact();
+                            this.entityManager.currentTarget = entity; // Set chat target
+                            console.log("Interacted with Entity");
+                        }
+                    }
                     break;
             }
         };
@@ -346,7 +370,104 @@ export class SceneManager {
             info.innerText = `[${this.frameCount}] [${locked}] Keys: ${keys} | Pos: ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`;
         }
 
+        // Update Interaction Raycast
+        this.updateInteraction();
+
         this.render();
+    }
+
+    updateInteraction() {
+        if (!this.controls.isLocked) return;
+
+        // Raycast from center of screen
+        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
+        // Collect interactables
+        let interactables = [];
+        let entityMeshes = [];
+
+        if (this.entityManager) {
+            entityMeshes = this.entityManager.getInteractables();
+            interactables = interactables.concat(entityMeshes);
+        }
+
+        // Add Buildings (Optional, if we want to inspect them)
+        if (this.builder && this.builder.objects) {
+            interactables = interactables.concat(this.builder.objects);
+        }
+
+        const intersects = this.raycaster.intersectObjects(interactables, true); // Recursive for children
+        const prompt = document.getElementById('interaction-prompt');
+
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+
+            if (hit.distance < 5) { // Interaction range
+                // Find the root object (Entity or Building)
+                let object = hit.object;
+                // Traverse up until we find the main mesh added to scene or one we recognize
+                while (object.parent && object.parent !== this.scene && !interactables.includes(object)) {
+                    object = object.parent;
+                }
+
+                // Handle Hover State Change
+                if (this.hoveredObject !== object) {
+                    // Unhover previous
+                    if (this.hoveredObject) {
+                        const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
+                        if (prevEntity && typeof prevEntity.setHovered === 'function') {
+                            prevEntity.setHovered(false);
+                        }
+                    }
+                    // Hover new
+                    const newEntity = this.entityManager.getEntityByMesh(object);
+                    if (newEntity && typeof newEntity.setHovered === 'function') {
+                        newEntity.setHovered(true);
+                    }
+                }
+
+                this.hoveredObject = object;
+
+                // Determine what it is
+                let text = "Interact";
+
+                // Check if it's an Entity
+                const entity = this.entityManager.getEntityByMesh(object);
+                if (entity) {
+                    text = "E - Talk to Citizen";
+                    if (entity.constructor.name === "CyberDog") text = "E - Pet Dog";
+                }
+                // Check if it's a Building
+                else if (object.userData.type) {
+                    text = `Building: ${object.userData.type.toUpperCase()}`;
+                }
+
+                if (prompt) {
+                    prompt.innerText = text;
+                    prompt.classList.add('visible');
+                }
+            } else {
+                // Clear hover if too far
+                if (this.hoveredObject) {
+                    const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
+                    if (prevEntity && typeof prevEntity.setHovered === 'function') {
+                        prevEntity.setHovered(false);
+                    }
+                }
+                this.hoveredObject = null;
+                if (prompt) prompt.classList.remove('visible');
+            }
+        } else {
+            // Clear hover if no hit
+            if (this.hoveredObject) {
+                const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
+                if (prevEntity && typeof prevEntity.setHovered === 'function') {
+                    prevEntity.setHovered(false);
+                }
+            }
+            this.hoveredObject = null;
+            if (prompt) prompt.classList.remove('visible');
+        }
     }
 
     render() {

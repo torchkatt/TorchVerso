@@ -26,6 +26,10 @@ export class NPC {
     }
 
     init(position) {
+        // AI Personality
+        this.systemPrompt = "You are a citizen of Torchverso, a futuristic cyberpunk city. You are optimistic but cynical about the corporations. Keep answers short (under 20 words).";
+        this.isThinking = false;
+
         // Geometry: Robot Head
         const geometry = new THREE.SphereGeometry(0.5, 16, 16);
         const material = new THREE.MeshStandardMaterial({
@@ -119,14 +123,36 @@ export class NPC {
     }
 
     interact() {
+        // If AI is connected, we might want to trigger chat mode instead of random phrase
+        // For now, keep random phrase as fallback or initial greeting
         const phrase = this.phrases[Math.floor(Math.random() * this.phrases.length)];
         this.showDialog(phrase);
+    }
+
+    async talkToAI(userMessage, aiManager) {
+        if (this.isThinking) return;
+
+        this.showDialog("Thinking...");
+        this.isThinking = true;
+
+        const response = await aiManager.generateResponse(this.systemPrompt, userMessage);
+
+        this.isThinking = false;
+        this.showDialog(response);
     }
 
     showDialog(text) {
         this.bubbleElement.innerText = text;
         this.bubbleElement.classList.add('visible');
-        this.dialogTimer = 3; // Show for 3 seconds
+        this.dialogTimer = 5; // Show for 5 seconds
+    }
+
+    setHovered(isHovered) {
+        if (isHovered) {
+            this.speed = 0; // Stop when looked at
+        } else {
+            this.speed = 2; // Resume walking
+        }
     }
 
     hideDialog() {

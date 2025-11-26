@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 export class RemotePlayer {
-    constructor(scene, id, initialData) {
+    constructor(scene, camera, id, initialData) {
         this.scene = scene;
+        this.camera = camera; // Store camera reference
         this.id = id;
         this.mesh = null;
 
@@ -67,6 +68,52 @@ export class RemotePlayer {
         while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
 
         this.mesh.rotation.y += rotDiff * 10.0 * delta;
+
+        // Update Chat Bubble Position
+        this.updateBubblePosition();
+    }
+
+    showChatBubble(text) {
+        // Create bubble element if not exists
+        if (!this.bubbleElement) {
+            this.bubbleElement = document.createElement('div');
+            this.bubbleElement.className = 'bubble visible';
+            document.getElementById('bubble-container').appendChild(this.bubbleElement);
+        }
+
+        this.bubbleElement.innerText = text;
+        this.bubbleElement.classList.add('visible');
+
+        // Reset timer
+        if (this.bubbleTimer) clearTimeout(this.bubbleTimer);
+        this.bubbleTimer = setTimeout(() => {
+            if (this.bubbleElement) {
+                this.bubbleElement.classList.remove('visible');
+                // Optional: Remove from DOM after fade out
+            }
+        }, 5000);
+    }
+
+    updateBubblePosition() {
+        if (!this.bubbleElement || !this.bubbleElement.classList.contains('visible')) return;
+
+        const headPos = this.mesh.position.clone();
+        headPos.y += 2.5; // Above head
+
+        headPos.project(this.camera);
+
+        const x = (headPos.x * .5 + .5) * window.innerWidth;
+        const y = (-(headPos.y * .5) + .5) * window.innerHeight;
+
+        this.bubbleElement.style.left = `${x}px`;
+        this.bubbleElement.style.top = `${y}px`;
+
+        // Hide if behind camera
+        if (headPos.z > 1) {
+            this.bubbleElement.style.display = 'none';
+        } else {
+            this.bubbleElement.style.display = 'block';
+        }
     }
 
     dispose() {
@@ -74,6 +121,9 @@ export class RemotePlayer {
             this.scene.remove(this.mesh);
             this.mesh.geometry.dispose();
             this.mesh.material.dispose();
+        }
+        if (this.bubbleElement) {
+            this.bubbleElement.remove();
         }
     }
 }

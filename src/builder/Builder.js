@@ -8,7 +8,7 @@ export class Builder {
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
 
-        this.isActive = true;
+        this.isActive = false; // Start disabled
         this.gridSize = 1;
 
         this.ghostMesh = null;
@@ -56,7 +56,6 @@ export class Builder {
                 offsetY: 2,
                 cost: 50,
                 income: 0
-                // Custom logic for lamp head could be added here, but keeping it simple for now
             },
             bench: {
                 geometry: new THREE.BoxGeometry(2, 0.5, 0.8),
@@ -77,7 +76,8 @@ export class Builder {
     }
 
     init() {
-        this.updateGhost();
+        // Don't show ghost initially
+        // this.updateGhost(); 
 
         // Event listeners
         document.addEventListener('mousedown', (e) => this.onMouseDown(e));
@@ -95,12 +95,18 @@ export class Builder {
                 this.setType(tool.dataset.type);
             });
         });
+
+        // Hide toolbar initially
+        const toolbar = document.getElementById('toolbar');
+        if (toolbar) toolbar.style.display = 'none';
     }
 
     setType(type) {
         if (this.prefabs[type]) {
             this.currentType = type;
-            this.updateGhost();
+            if (this.isActive) {
+                this.updateGhost();
+            }
         }
     }
 
@@ -121,6 +127,12 @@ export class Builder {
     }
 
     onKeyDown(event) {
+        if (event.code === 'KeyC') {
+            this.toggleBuildMode();
+        }
+
+        if (!this.isActive) return; // Ignore other keys if not building
+
         if (event.code === 'KeyR') {
             this.rotation += Math.PI / 2;
         }
@@ -128,6 +140,24 @@ export class Builder {
         if (event.code === 'Digit1') this.selectByIndex(0);
         if (event.code === 'Digit2') this.selectByIndex(1);
         if (event.code === 'Digit3') this.selectByIndex(2);
+    }
+
+    toggleBuildMode() {
+        this.isActive = !this.isActive;
+        const toolbar = document.getElementById('toolbar');
+
+        if (this.isActive) {
+            console.log("Builder: ON");
+            this.updateGhost();
+            if (toolbar) toolbar.style.display = 'flex';
+        } else {
+            console.log("Builder: OFF");
+            if (this.ghostMesh) {
+                this.scene.remove(this.ghostMesh);
+                this.ghostMesh = null;
+            }
+            if (toolbar) toolbar.style.display = 'none';
+        }
     }
 
     selectByIndex(index) {
@@ -165,6 +195,8 @@ export class Builder {
     onMouseDown(event) {
         // Only build if pointer is locked (playing)
         if (!document.pointerLockElement) return;
+
+        if (!this.isActive) return; // Don't build if mode is off
 
         if (event.button !== 0) return; // Only left click
 
