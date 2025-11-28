@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 
 export class WorldGenerator {
-    constructor(scene) {
+    constructor(scene, landManager) {
         this.scene = scene;
+        this.landManager = landManager;
         this.buildings = [];
+        this.interactables = []; // Store interactable objects like signs
 
         // Simple clean city grid
         this.blockSize = 30; // Size of each block
@@ -102,22 +104,194 @@ export class WorldGenerator {
                 const blockCenterX = bx * (this.blockSize + this.streetWidth) + this.blockSize / 2 - totalSpan / 2 + this.streetWidth;
                 const blockCenterZ = bz * (this.blockSize + this.streetWidth) + this.blockSize / 2 - totalSpan / 2 + this.streetWidth;
 
-                // Place 2-4 buildings per block, INSIDE the block
-                const numBuildings = Math.floor(Math.random() * 3) + 2;
-                for (let i = 0; i < numBuildings; i++) {
-                    // Random position WELL INSIDE the block (leaving 5 unit margin from edges)
-                    const margin = 5;
-                    const x = blockCenterX + (Math.random() - 0.5) * (this.blockSize - margin * 2);
-                    const z = blockCenterZ + (Math.random() - 0.5) * (this.blockSize - margin * 2);
-
-                    const type = Math.random();
-                    if (type < 0.5) {
-                        this.createShop(x, z, Math.random() * Math.PI * 2);
-                    } else {
-                        this.createOfficeBuilding(x, z, Math.random() * Math.PI * 2);
-                    }
-                }
+                this.populateBlock(blockCenterX, blockCenterZ);
             }
+        }
+    }
+
+    populateBlock(centerX, centerZ) {
+        // Buildings on all 4 sides but WELL INSIDE the block
+        const spacing = 12; // Space between buildings
+        const halfBlock = this.blockSize / 2;
+        // CRITICAL: Buildings must be at least this far from street edge
+        const safeMargin = this.streetWidth / 2 + this.sidewalkWidth + 3;
+
+        // Helper to decide what to build
+        const placeStructure = (x, z, rotation) => {
+            const rand = Math.random();
+            if (rand > 0.3) { // 70% chance of building
+                const type = Math.random();
+                if (type < 0.5) this.createShop(x, z, rotation);
+                else this.createOfficeBuilding(x, z, rotation);
+            } else {
+                // 30% chance of EMPTY PLOT FOR SALE
+                this.createEmptyPlot(x, z, rotation);
+            }
+        };
+
+        // North side (buildings facing south)
+        let x = centerX - halfBlock + safeMargin;
+        const northZ = centerZ - halfBlock + safeMargin + 3;
+        while (x < centerX + halfBlock - safeMargin) {
+            placeStructure(x, northZ, 0);
+            x += spacing;
+        }
+
+        // South side (buildings facing north)
+        x = centerX - halfBlock + safeMargin;
+        const southZ = centerZ + halfBlock - safeMargin - 3;
+        while (x < centerX + halfBlock - safeMargin) {
+            placeStructure(x, southZ, Math.PI);
+            x += spacing;
+        }
+
+        // West side (buildings facing east)
+        let z = centerZ - halfBlock + safeMargin;
+        const westX = centerX - halfBlock + safeMargin + 3;
+        while (z < centerZ + halfBlock - safeMargin) {
+            placeStructure(westX, z, Math.PI / 2);
+            z += spacing;
+        }
+
+        // East side (buildings facing west)
+        z = centerZ - halfBlock + safeMargin;
+        const eastX = centerX + halfBlock - safeMargin - 3;
+        while (z < centerZ + halfBlock - safeMargin) {
+            placeStructure(eastX, z, -Math.PI / 2);
+            z += spacing;
+        }
+    }
+
+    createEmptyPlot(x, z, rotation) {
+        // Plot visual boundary
+        const width = 10;
+        const depth = 10;
+
+        // Ground plane (subtle)
+        const plotGeo = new THREE.PlaneGeometry(width, depth);
+        const plotMat = new THREE.MeshBasicMaterial({
+            color: 0x0088ff,
+            transparent: true,
+            opacity: 0.1,
+            side: THREE.DoubleSide
+        });
+        const plot = new THREE.Mesh(plotGeo, plotMat);
+        plot.rotation.x = -Math.PI / 2;
+        plot.position.set(x, 0.05, z);
+        this.scene.add(plot);
+
+        // Holographic border (animated lines)
+        const borderGroup = new THREE.Group();
+        const borderMat = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        // Create 4 border edges
+        const edgeHeight = 1.5;
+        const edgeThickness = 0.05;
+
+        // North edge
+        const northEdge = new THREE.Mesh(
+            new THREE.BoxGeometry(width, edgeHeight, edgeThickness),
+            borderMat
+        );
+        northEdge.position.set(0, edgeHeight / 2, depth / 2);
+        borderGroup.add(northEdge);
+
+        // South edge
+        const southEdge = new THREE.Mesh(
+            new THREE.BoxGeometry(width, edgeHeight, edgeThickness),
+            borderMat
+        );
+        southEdge.position.set(0, edgeHeight / 2, -depth / 2);
+        borderGroup.add(southEdge);
+
+        // East edge
+        const eastEdge = new THREE.Mesh(
+            new THREE.BoxGeometry(edgeThickness, edgeHeight, depth),
+            borderMat
+        );
+        eastEdge.position.set(width / 2, edgeHeight / 2, 0);
+        borderGroup.add(eastEdge);
+
+        // West edge
+        const westEdge = new THREE.Mesh(
+            new THREE.BoxGeometry(edgeThickness, edgeHeight, depth),
+            borderMat
+        );
+        westEdge.position.set(-width / 2, edgeHeight / 2, 0);
+        borderGroup.add(westEdge);
+
+        borderGroup.position.set(x, 0, z);
+        this.scene.add(borderGroup);
+
+        // "FOR SALE" Sign (improved)
+        const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.5);
+        const poleMat = new THREE.MeshStandardMaterial({
+            color: 0x333333,
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.set(x, 1.25, z);
+        pole.castShadow = true;
+        this.scene.add(pole);
+
+        const signGeo = new THREE.BoxGeometry(2, 1.2, 0.1);
+        const signMat = new THREE.MeshStandardMaterial({
+            color: 0xff3333,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.6,
+            metalness: 0.3,
+            roughness: 0.4
+        });
+        const sign = new THREE.Mesh(signGeo, signMat);
+        sign.position.set(0, 1.5, 0);
+        pole.add(sign);
+
+        // SE VENDE text (white bars)
+        const textGeo = new THREE.PlaneGeometry(1.6, 0.25);
+        const textMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff
+        });
+
+        const text1 = new THREE.Mesh(textGeo, textMat);
+        text1.position.set(0, 0.3, 0.06);
+        sign.add(text1);
+
+        const text2 = new THREE.Mesh(textGeo, textMat);
+        text2.position.set(0, 0, 0.06);
+        sign.add(text2);
+
+        const text3 = new THREE.Mesh(textGeo, textMat);
+        text3.position.set(0, -0.3, 0.06);
+        sign.add(text3);
+
+        pole.rotation.y = rotation;
+
+        // Register with LandManager if available
+        if (this.landManager) {
+            const id = `plot_${Math.floor(x)}_${Math.floor(z)}`;
+            const price = Math.floor(Math.random() * 5000) + 5000; // $5k - $10k
+            this.landManager.registerPlot(id, price, new THREE.Vector3(x, 0, z), { width, depth });
+
+            // Link meshes for updates
+            const plotData = this.landManager.plots.get(id);
+            if (plotData) {
+                plotData.mesh = plot;
+                plotData.borderGroup = borderGroup;
+                plotData.signMesh = sign;
+            }
+
+            // Add to interactables
+            sign.userData = {
+                isInteractable: true,
+                type: 'land_sign',
+                plotId: id
+            };
+            this.interactables.push(sign);
         }
     }
 

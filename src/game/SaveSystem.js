@@ -33,14 +33,16 @@ export class SaveSystem {
 
         const economy = this.sceneManager.economyManager;
         const builder = this.sceneManager.builder;
+        const landManager = this.sceneManager.landManager;
 
-        if (!economy || !builder) return;
+        if (!economy || !builder || !landManager) return;
 
         const data = {
             economy: {
                 balance: economy.balance,
                 incomeRate: economy.incomeRate
             },
+            land: landManager.exportData(),
             buildings: builder.objects.map(obj => {
                 return {
                     type: obj.userData.type,
@@ -81,7 +83,13 @@ export class SaveSystem {
                     economy.updateUI();
                 }
 
-                // 2. Load Buildings
+                // 2. Load Land
+                if (data.land) {
+                    const landManager = this.sceneManager.landManager;
+                    if (landManager) landManager.importData(data.land);
+                }
+
+                // 3. Load Buildings
                 if (data.buildings && Array.isArray(data.buildings)) {
                     const builder = this.sceneManager.builder;
 
@@ -118,6 +126,7 @@ export class SaveSystem {
         // Let's overwrite with initial state.
         const initialData = {
             economy: { balance: 1000, incomeRate: 0 },
+            land: { wallet: 50000, ownedPlots: [] },
             buildings: []
         };
         await setDoc(doc(db, "cities", this.userId), initialData);

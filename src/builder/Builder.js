@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 
 export class Builder {
-    constructor(scene, camera, economyManager) {
+    constructor(scene, camera, economyManager, landManager) {
         this.scene = scene;
         this.camera = camera;
-        this.economyManager = economyManager; // Dependency Injection
+        this.economyManager = economyManager;
+        this.landManager = landManager;
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
 
@@ -199,6 +200,28 @@ export class Builder {
         if (!this.isActive) return; // Don't build if mode is off
 
         if (event.button !== 0) return; // Only left click
+
+        // 1. Check Land Ownership
+        // We need access to LandManager. Since we don't have it directly injected, 
+        // we can try to find it on the scene or pass it in constructor.
+        // Assuming SceneManager passes it or we can access it via global/singleton if needed.
+        // Better approach: Update constructor to take LandManager.
+        // For now, let's assume we update constructor in next step or use a workaround.
+        // Actually, let's look at how we are instantiated. SceneManager creates us.
+        // We should update SceneManager to pass LandManager to Builder.
+
+        // Placeholder for Land Check (will be enabled once we update Constructor)
+        if (this.landManager) {
+            const plot = this.landManager.getPlotAt(this.ghostMesh.position);
+            if (!plot) {
+                this.economyManager.showFloatingText("¡No puedes construir en la calle!", "#ff0000");
+                return;
+            }
+            if (plot.owner !== 'player') {
+                this.economyManager.showFloatingText("¡Este terreno no es tuyo!", "#ff0000");
+                return;
+            }
+        }
 
         // Check Cost
         const prefab = this.prefabs[this.currentType];

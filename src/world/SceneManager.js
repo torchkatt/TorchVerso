@@ -11,6 +11,7 @@ import { NetworkManager } from '../game/NetworkManager.js';
 import { ChatManager } from '../game/ChatManager.js';
 import { AIManager } from '../ai/AIManager.js';
 import { SoundManager } from '../game/SoundManager.js';
+import { LandManager } from '../economy/LandManager.js';
 
 export class SceneManager {
     constructor(container) {
@@ -32,6 +33,7 @@ export class SceneManager {
         this.moveRight = false;
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
+        this.landManager = null; // New LandManager
 
         this.init();
     }
@@ -75,19 +77,22 @@ export class SceneManager {
         // 6. Economy (Initialize BEFORE Builder)
         this.economyManager = new EconomyManager();
 
-        // 7. Builder System
-        this.builder = new Builder(this.scene, this.camera, this.economyManager);
+        // 7. Land Management
+        this.landManager = new LandManager(this.scene, this.camera, this.container); // Init LandManager
 
-        // 8. World Generation
-        this.worldGenerator = new WorldGenerator(this.scene);
+        // 8. Builder System (pass landManager for ownership checks)
+        this.builder = new Builder(this.scene, this.camera, this.economyManager, this.landManager);
 
-        // 9. AI / Entities (Pass SoundManager)
+        // 9. World Generation
+        this.worldGenerator = new WorldGenerator(this.scene, this.landManager); // Pass to Generator
+
+        // 10. AI / Entities (Pass SoundManager)
         this.entityManager = new EntityManager(this.scene, this.camera, this.soundManager);
 
-        // 10. Save System
+        // 11. Save System
         this.saveSystem = new SaveSystem(this);
 
-        // 11. Auth (Connects everything)
+        // 12. Auth (Connects everything)
         this.authManager = new AuthManager((user) => {
             // When logged in:
             this.saveSystem.setUser(user); // Start saving
@@ -199,12 +204,22 @@ export class SceneManager {
                     break;
                 case 'KeyE':
                     if (this.hoveredObject) {
-                        // Check if Entity
-                        const entity = this.entityManager.getEntityByMesh(this.hoveredObject);
-                        if (entity && typeof entity.interact === 'function') {
-                            entity.interact();
-                            this.entityManager.currentTarget = entity; // Set chat target
-                            console.log("Interacted with Entity");
+                        // Check if it's a land sign
+                        if (this.hoveredObject.userData.type === 'land_sign') {
+                            const plotId = this.hoveredObject.userData.plotId;
+                            if (plotId && this.landManager) {
+                                this.landManager.interactWithPlot(plotId);
+                                console.log("Interacted with Land Sign:", plotId);
+                            }
+                        }
+                        // Check if Entity (NPC)
+                        else {
+                            const entity = this.entityManager.getEntityByMesh(this.hoveredObject);
+                            if (entity && typeof entity.interact === 'function') {
+                                entity.interact();
+                                this.entityManager.currentTarget = entity;
+                                console.log("Interacted with Entity");
+                            }
                         }
                     }
                     break;
@@ -273,8 +288,7 @@ export class SceneManager {
         return false;
     }
 
-    updateDebugInfo(time) {
-        // Update Debug UI
+    updateDebugInfo() {
         const info = document.getElementById('debug-info');
         if (info) {
             const { x, y, z } = this.camera.position;
@@ -286,87 +300,125 @@ export class SceneManager {
                 this.moveRight ? 'D' : '_'
             ].join(' ');
 
+            this.frameCount = (this.frameCount || 0) + 1;
             info.innerText = `[${this.frameCount}] [${locked}] Keys: ${keys} | Pos: ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`;
         }
     }
 
+    checkInteractions() {
+        if (!this.controls.isLocked) return;
+
+        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
+        // Collect interactables
+        let interactables = [];
+
+        // Entities
+        if (this.entityManager) {
+            interactables = interactables.concat(this.entityManager.getInteractables());
+        }
+
+        // Land Signs
+        if (this.worldGenerator && this.worldGenerator.interactables) {
+            interactables = interactables.concat(this.worldGenerator.interactables);
+            // DEBUG
+            if (this.worldGenerator.interactables.length > 0 && Math.random() < 0.01) {
+                console.log("Land signs available:", this.worldGenerator.interactables.length);
+            }
+        }
+
+        const intersects = this.raycaster.intersectObjects(interactables, true);
+        const prompt = document.getElementById('interaction-prompt');
+
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            if (hit.distance < 5) {
+                let object = hit.object;
+
+                // Traverse up to find object with userData
+                // This handles cases where we hit a child mesh (like text bars on the sign)
+                let maxIterations = 10;
+                let iterations = 0;
+                while (iterations < maxIterations) {
+                    if (object.userData && object.userData.isInteractable) {
+                        break; // Found it
+                    }
+                    if (object.parent && object.parent !== this.scene) {
+                        object = object.parent;
+                    } else {
+                        break; // Reached scene or no parent
+                    }
+                    iterations++;
+                }
+
+                if (object.userData && object.userData.isInteractable) {
+                    // Show prompt
+                    if (prompt) {
+                        if (object.userData.type === 'land_sign') {
+                            prompt.innerText = "E - Ver Terreno";
+                        } else if (object.userData.type === 'npc') {
+                            prompt.innerText = "E - Hablar";
+                        } else {
+                            prompt.innerText = "E - Interactuar";
+                        }
+                        prompt.classList.add('visible');
+                    }
+                    this.hoveredObject = object;
+                    return;
+                }
+            }
+        }
+
+        // No interaction
+        if (prompt) prompt.classList.remove('visible');
+        this.hoveredObject = null;
+    }
+
+    handleMovement(delta) {
+        // Safety checks
+        if (!this.velocity) this.velocity = new THREE.Vector3();
+        if (!this.direction) this.direction = new THREE.Vector3();
+
+        const speed = 10.0; // Movement speed
+
+        this.velocity.x -= this.velocity.x * 10.0 * delta;
+        this.velocity.z -= this.velocity.z * 10.0 * delta;
+
+        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+        this.direction.normalize();
+
+        if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * 400.0 * delta;
+        if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * 400.0 * delta;
+
+        // Predict next position for collision
+        const nextVelocity = this.velocity.clone().multiplyScalar(delta);
+
+        if (!this.checkCollision(nextVelocity)) {
+            this.controls.moveRight(-this.velocity.x * delta);
+            this.controls.moveForward(-this.velocity.z * delta);
+        } else {
+            // Simple stop on collision
+            this.velocity.x = 0;
+            this.velocity.z = 0;
+        }
+    }
+
     update(time) {
-        // Prevent huge delta on first frame or lag spikes
-        let delta = (time - this.prevTime) / 1000;
-        this.prevTime = time;
-
-        if (delta > 0.1) delta = 0.1; // Clamp delta
-
-        this.frameCount = (this.frameCount || 0) + 1;
+        const delta = this.clock.getDelta();
 
         if (this.controls.isLocked) {
-            // Movement Speed
-            const speed = 15 * delta; // units per second (Reduced from 100)
-            const velocity = new THREE.Vector3();
-
-            // Direction Vector
-            const direction = new THREE.Vector3();
-            this.camera.getWorldDirection(direction);
-            direction.y = 0;
-            direction.normalize();
-
-            const sideDirection = new THREE.Vector3();
-            sideDirection.crossVectors(this.camera.up, direction);
-            sideDirection.normalize();
-
-            // Calculate intended movement
-            // IMPORTANT: Clone vectors before modifying them to avoid side effects
-            if (this.moveForward) velocity.add(direction.clone().multiplyScalar(speed));
-            if (this.moveBackward) velocity.add(direction.clone().multiplyScalar(-speed));
-            if (this.moveLeft) velocity.add(sideDirection.clone().multiplyScalar(speed));
-            if (this.moveRight) velocity.add(sideDirection.clone().multiplyScalar(-speed));
-
-            // Collision Detection
-            const isColliding = this.checkCollision(velocity);
-
-            if (velocity.length() > 0 && isColliding) {
-                console.log("Collision detected! Stopping movement.");
-                // Stop movement if collision detected
-                velocity.set(0, 0, 0);
-            } else if (velocity.length() > 0) {
-                // console.log("Moving:", velocity);
-            }
-
-            // Apply movement
-            this.camera.position.add(velocity);
-
-            // Safety: Respawn if fell off world or NaN
-            if (this.camera.position.y < -50 || isNaN(this.camera.position.x)) {
-                console.warn("Player out of bounds or NaN, respawning...");
-                this.camera.position.set(0, 5, 10);
-                this.velocity.set(0, 0, 0);
-            }
+            this.handleMovement(delta);
         }
 
-        // Update Builder
-        if (this.builder) {
-            this.builder.update();
-        }
-
-        // Update AI
-        if (this.entityManager) {
-            this.entityManager.update(delta, this.camera.position);
-        }
-
-        // Update Economy
-        if (this.economyManager) {
-            this.economyManager.update(delta);
-        }
-
-        // Update Save System
-        if (this.saveSystem) {
-            this.saveSystem.update(delta);
-        }
-
-        // Update Network
-        if (this.networkManager) {
-            this.networkManager.update(delta);
-        }
+        // Update Managers
+        if (this.entityManager) this.entityManager.update(delta, this.camera.position);
+        if (this.builder) this.builder.update();
+        if (this.soundManager) this.soundManager.update(delta);
+        if (this.landManager) this.landManager.update();
+        if (this.economyManager) this.economyManager.update(delta);
+        if (this.saveSystem) this.saveSystem.update(delta);
+        if (this.networkManager) this.networkManager.update(delta);
 
         // Rotate debug cube
         if (this.debugCube) {
@@ -374,122 +426,9 @@ export class SceneManager {
             this.debugCube.rotation.y += delta;
         }
 
-        // Update Debug UI
-        const info = document.getElementById('debug-info');
-        if (info) {
-            const { x, y, z } = this.camera.position;
-            const locked = this.controls.isLocked ? 'LOCKED' : 'UNLOCKED';
-            const keys = [
-                this.moveForward ? 'W' : '_',
-                this.moveBackward ? 'S' : '_',
-                this.moveLeft ? 'A' : '_',
-                this.moveRight ? 'D' : '_'
-            ].join(' ');
+        this.updateDebugInfo();
+        this.checkInteractions();
 
-            info.innerText = `[${this.frameCount}] [${locked}] Keys: ${keys} | Pos: ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`;
-        }
-
-        // Update Interaction Raycast
-        this.updateInteraction();
-
-        this.render();
-    }
-
-    updateInteraction() {
-        if (!this.controls.isLocked) return;
-
-        // Raycast from center of screen
-        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-
-        // Collect interactables
-        let interactables = [];
-        let entityMeshes = [];
-
-        if (this.entityManager) {
-            entityMeshes = this.entityManager.getInteractables();
-            interactables = interactables.concat(entityMeshes);
-        }
-
-        // Add Buildings (Optional, if we want to inspect them)
-        if (this.builder && this.builder.objects) {
-            interactables = interactables.concat(this.builder.objects);
-        }
-
-        const intersects = this.raycaster.intersectObjects(interactables, true); // Recursive for children
-        const prompt = document.getElementById('interaction-prompt');
-
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-
-            if (hit.distance < 5) { // Interaction range
-                // Find the root object (Entity or Building)
-                let object = hit.object;
-                // Traverse up until we find the main mesh added to scene or one we recognize
-                while (object.parent && object.parent !== this.scene && !interactables.includes(object)) {
-                    object = object.parent;
-                }
-
-                // Handle Hover State Change
-                if (this.hoveredObject !== object) {
-                    // Unhover previous
-                    if (this.hoveredObject) {
-                        const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
-                        if (prevEntity && typeof prevEntity.setHovered === 'function') {
-                            prevEntity.setHovered(false);
-                        }
-                    }
-                    // Hover new
-                    const newEntity = this.entityManager.getEntityByMesh(object);
-                    if (newEntity && typeof newEntity.setHovered === 'function') {
-                        newEntity.setHovered(true);
-                    }
-                }
-
-                this.hoveredObject = object;
-
-                // Determine what it is
-                let text = "Interact";
-
-                // Check if it's an Entity
-                const entity = this.entityManager.getEntityByMesh(object);
-                if (entity) {
-                    text = "E - Talk to Citizen";
-                    if (entity.constructor.name === "CyberDog") text = "E - Pet Dog";
-                }
-                // Check if it's a Building
-                else if (object.userData.type) {
-                    text = `Building: ${object.userData.type.toUpperCase()}`;
-                }
-
-                if (prompt) {
-                    prompt.innerText = text;
-                    prompt.classList.add('visible');
-                }
-            } else {
-                // Clear hover if too far
-                if (this.hoveredObject) {
-                    const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
-                    if (prevEntity && typeof prevEntity.setHovered === 'function') {
-                        prevEntity.setHovered(false);
-                    }
-                }
-                this.hoveredObject = null;
-                if (prompt) prompt.classList.remove('visible');
-            }
-        } else {
-            // Clear hover if no hit
-            if (this.hoveredObject) {
-                const prevEntity = this.entityManager.getEntityByMesh(this.hoveredObject);
-                if (prevEntity && typeof prevEntity.setHovered === 'function') {
-                    prevEntity.setHovered(false);
-                }
-            }
-            this.hoveredObject = null;
-            if (prompt) prompt.classList.remove('visible');
-        }
-    }
-
-    render() {
         this.renderer.render(this.scene, this.camera);
     }
 
