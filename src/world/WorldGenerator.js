@@ -11,7 +11,7 @@ export class WorldGenerator {
         this.blockSize = 30; // Size of each block
         this.streetWidth = 10; // Street width
         this.sidewalkWidth = 2;
-        this.citySize = 3; // 3x3 blocks
+        this.citySize = 5; // 5x5 blocks (increased from 3x3 for more real estate)
 
         this.init();
     }
@@ -104,36 +104,57 @@ export class WorldGenerator {
                 const blockCenterX = bx * (this.blockSize + this.streetWidth) + this.blockSize / 2 - totalSpan / 2 + this.streetWidth;
                 const blockCenterZ = bz * (this.blockSize + this.streetWidth) + this.blockSize / 2 - totalSpan / 2 + this.streetWidth;
 
-                this.populateBlock(blockCenterX, blockCenterZ);
+                // Decide block type: 70% land plots (PRIORITY), 30% buildings
+                const blockType = Math.random();
+                if (blockType < 0.7) {
+                    // Dedicated LAND BLOCK - only plots for sale (MAIN BUSINESS)
+                    this.populateLandBlock(blockCenterX, blockCenterZ);
+                } else {
+                    // Building block - shops and offices
+                    this.populateBuildingBlock(blockCenterX, blockCenterZ);
+                }
             }
         }
     }
 
-    populateBlock(centerX, centerZ) {
+    populateLandBlock(centerX, centerZ) {
+        // This block is dedicated to land plots
+        // Plot size: 10x10, so spacing must be >10 to prevent overlap
+        const plotSpacing = 11; // Tight but safe spacing (plot is 10x10)
+        const halfBlock = this.blockSize / 2;
+        const safeMargin = this.streetWidth / 2 + this.sidewalkWidth + 3;
+
+        // Create plots in a grid within the block
+        for (let offsetX = -halfBlock + safeMargin; offsetX < halfBlock - safeMargin; offsetX += plotSpacing) {
+            for (let offsetZ = -halfBlock + safeMargin; offsetZ < halfBlock - safeMargin; offsetZ += plotSpacing) {
+                const x = centerX + offsetX;
+                const z = centerZ + offsetZ;
+                // Keep rotation consistent for clean grid
+                const rotation = 0; // Aligned grid
+                this.createEmptyPlot(x, z, rotation);
+            }
+        }
+    }
+
+    populateBuildingBlock(centerX, centerZ) {
         // Buildings on all 4 sides but WELL INSIDE the block
         const spacing = 12; // Space between buildings
         const halfBlock = this.blockSize / 2;
         // CRITICAL: Buildings must be at least this far from street edge
         const safeMargin = this.streetWidth / 2 + this.sidewalkWidth + 3;
 
-        // Helper to decide what to build
-        const placeStructure = (x, z, rotation) => {
-            const rand = Math.random();
-            if (rand > 0.3) { // 70% chance of building
-                const type = Math.random();
-                if (type < 0.5) this.createShop(x, z, rotation);
-                else this.createOfficeBuilding(x, z, rotation);
-            } else {
-                // 30% chance of EMPTY PLOT FOR SALE
-                this.createEmptyPlot(x, z, rotation);
-            }
+        // Helper to build structures (no more random plots here)
+        const placeBuilding = (x, z, rotation) => {
+            const type = Math.random();
+            if (type < 0.5) this.createShop(x, z, rotation);
+            else this.createOfficeBuilding(x, z, rotation);
         };
 
         // North side (buildings facing south)
         let x = centerX - halfBlock + safeMargin;
         const northZ = centerZ - halfBlock + safeMargin + 3;
         while (x < centerX + halfBlock - safeMargin) {
-            placeStructure(x, northZ, 0);
+            placeBuilding(x, northZ, 0);
             x += spacing;
         }
 
@@ -141,7 +162,7 @@ export class WorldGenerator {
         x = centerX - halfBlock + safeMargin;
         const southZ = centerZ + halfBlock - safeMargin - 3;
         while (x < centerX + halfBlock - safeMargin) {
-            placeStructure(x, southZ, Math.PI);
+            placeBuilding(x, southZ, Math.PI);
             x += spacing;
         }
 
@@ -149,7 +170,7 @@ export class WorldGenerator {
         let z = centerZ - halfBlock + safeMargin;
         const westX = centerX - halfBlock + safeMargin + 3;
         while (z < centerZ + halfBlock - safeMargin) {
-            placeStructure(westX, z, Math.PI / 2);
+            placeBuilding(westX, z, Math.PI / 2);
             z += spacing;
         }
 
@@ -157,7 +178,7 @@ export class WorldGenerator {
         z = centerZ - halfBlock + safeMargin;
         const eastX = centerX + halfBlock - safeMargin - 3;
         while (z < centerZ + halfBlock - safeMargin) {
-            placeStructure(eastX, z, -Math.PI / 2);
+            placeBuilding(eastX, z, -Math.PI / 2);
             z += spacing;
         }
     }

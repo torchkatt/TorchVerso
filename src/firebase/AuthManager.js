@@ -15,6 +15,7 @@ export class AuthManager {
                 console.log("Auth: User signed in anonymously", user.uid);
                 this.user = user;
                 if (this.onLogin) this.onLogin(user);
+                if (this.authReadyCallback) this.authReadyCallback(user);
             } else {
                 console.log("Auth: User signed out");
                 this.user = null;
@@ -26,6 +27,14 @@ export class AuthManager {
             .catch((error) => {
                 console.error("Auth Error:", error);
             });
+    }
+
+    onAuthReady(callback) {
+        this.authReadyCallback = callback;
+        // If already logged in, trigger immediately
+        if (this.user) {
+            callback(this.user);
+        }
     }
 
     getCurrentUser() {

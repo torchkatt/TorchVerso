@@ -10,6 +10,7 @@ export class Builder {
         this.mouse = new THREE.Vector2();
 
         this.isActive = false; // Start disabled
+        this.mode = 'none'; // 'none', 'build', 'delete', 'edit'
         this.gridSize = 1;
 
         this.ghostMesh = null;
@@ -94,18 +95,52 @@ export class Builder {
                 tool.classList.add('active');
                 // Set type
                 this.setType(tool.dataset.type);
+                this.setMode('build');
             });
         });
 
         // Hide toolbar initially
         const toolbar = document.getElementById('toolbar');
         if (toolbar) toolbar.style.display = 'none';
+        this.setMode('none'); // Initialize mode
+    }
+
+    setMode(mode) {
+        this.mode = mode;
+        this.isActive = (mode !== 'none');
+
+        console.log(`Builder Mode: ${mode}`);
+
+        const toolbar = document.getElementById('toolbar');
+        if (this.isActive) {
+            if (toolbar) toolbar.style.display = 'flex';
+            if (mode === 'build') this.updateGhost();
+            else if (this.ghostMesh) {
+                this.scene.remove(this.ghostMesh);
+                this.ghostMesh = null;
+            }
+
+            // Show mode notification
+            let msg = "MODO CONSTRUCCIÓN";
+            let color = "#00ff88";
+            if (mode === 'delete') { msg = "MODO ELIMINACIÓN (Click para borrar)"; color = "#ff4444"; }
+            if (mode === 'edit') { msg = "MODO EDICIÓN (Click para mover)"; color = "#0088ff"; }
+
+            if (this.economyManager) this.economyManager.showFloatingText(msg, color);
+
+        } else {
+            if (this.ghostMesh) {
+                this.scene.remove(this.ghostMesh);
+                this.ghostMesh = null;
+            }
+            if (toolbar) toolbar.style.display = 'none';
+        }
     }
 
     setType(type) {
         if (this.prefabs[type]) {
             this.currentType = type;
-            if (this.isActive) {
+            if (this.mode === 'build') {
                 this.updateGhost();
             }
         }
@@ -129,36 +164,38 @@ export class Builder {
 
     onKeyDown(event) {
         if (event.code === 'KeyC') {
-            this.toggleBuildMode();
+            // Toggle Build Mode
+            if (this.mode === 'build') this.setMode('none');
+            else this.setMode('build');
         }
 
-        if (!this.isActive) return; // Ignore other keys if not building
+        if (event.code === 'KeyX') {
+            // Toggle Delete Mode
+            if (this.mode === 'delete') this.setMode('none');
+            else this.setMode('delete');
+        }
+
+        if (event.code === 'KeyQ') {
+            // Toggle Edit Mode
+            if (this.mode === 'edit') this.setMode('none');
+            else this.setMode('edit');
+        }
+
+        if (this.mode === 'none') return; // Ignore other keys if not active
 
         if (event.code === 'KeyR') {
             this.rotation += Math.PI / 2;
         }
         // Number keys for selection
-        if (event.code === 'Digit1') this.selectByIndex(0);
-        if (event.code === 'Digit2') this.selectByIndex(1);
-        if (event.code === 'Digit3') this.selectByIndex(2);
+        if (event.code === 'Digit1') { this.selectByIndex(0); this.setMode('build'); }
+        if (event.code === 'Digit2') { this.selectByIndex(1); this.setMode('build'); }
+        if (event.code === 'Digit3') { this.selectByIndex(2); this.setMode('build'); }
     }
 
     toggleBuildMode() {
-        this.isActive = !this.isActive;
-        const toolbar = document.getElementById('toolbar');
-
-        if (this.isActive) {
-            console.log("Builder: ON");
-            this.updateGhost();
-            if (toolbar) toolbar.style.display = 'flex';
-        } else {
-            console.log("Builder: OFF");
-            if (this.ghostMesh) {
-                this.scene.remove(this.ghostMesh);
-                this.ghostMesh = null;
-            }
-            if (toolbar) toolbar.style.display = 'none';
-        }
+        // Deprecated, use setMode
+        if (this.mode === 'build') this.setMode('none');
+        else this.setMode('build');
     }
 
     selectByIndex(index) {
@@ -175,7 +212,7 @@ export class Builder {
     }
 
     update() {
-        if (!this.isActive || !this.ghostMesh) return;
+        if (this.mode !== 'build' || !this.ghostMesh) return;
 
         this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
         const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -197,60 +234,114 @@ export class Builder {
         // Only build if pointer is locked (playing)
         if (!document.pointerLockElement) return;
 
-        if (!this.isActive) return; // Don't build if mode is off
+        if (this.mode === 'none') return; // Don't build if mode is off
 
         if (event.button !== 0) return; // Only left click
 
-        // 1. Check Land Ownership
-        // We need access to LandManager. Since we don't have it directly injected, 
-        // we can try to find it on the scene or pass it in constructor.
-        // Assuming SceneManager passes it or we can access it via global/singleton if needed.
-        // Better approach: Update constructor to take LandManager.
-        // For now, let's assume we update constructor in next step or use a workaround.
-        // Actually, let's look at how we are instantiated. SceneManager creates us.
-        // We should update SceneManager to pass LandManager to Builder.
+        // --- DELETE MODE ---
+        if (this.mode === 'delete') {
+            this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+            const intersects = this.raycaster.intersectObjects(this.objects);
 
-        // Placeholder for Land Check (will be enabled once we update Constructor)
-        if (this.landManager) {
-            const plot = this.landManager.getPlotAt(this.ghostMesh.position);
-            if (!plot) {
-                this.economyManager.showFloatingText("¡No puedes construir en la calle!", "#ff0000");
-                return;
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                const object = hit.object;
+
+                // Check Ownership
+                if (object.userData.owner === this.landManager.userId) {
+                    // Remove
+                    this.scene.remove(object);
+                    this.objects = this.objects.filter(o => o !== object);
+                    this.economyManager.showFloatingText("Eliminado", "#ff4444");
+
+                    // Optional: Refund?
+                    // this.economyManager.addFunds(cost * 0.5);
+                } else {
+                    this.economyManager.showFloatingText("¡No es tuyo!", "#ff0000");
+                }
             }
-            if (plot.owner !== 'player') {
-                this.economyManager.showFloatingText("¡Este terreno no es tuyo!", "#ff0000");
-                return;
-            }
+            return;
         }
 
-        // Check Cost
-        const prefab = this.prefabs[this.currentType];
-        if (this.economyManager) {
-            if (!this.economyManager.spend(prefab.cost)) {
-                this.economyManager.showFloatingText("Insufficient Funds!", "#ff0000");
-                return; // Cancel build
-            }
+        // --- EDIT MODE ---
+        if (this.mode === 'edit') {
+            this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+            const intersects = this.raycaster.intersectObjects(this.objects);
 
-            // Add Income
-            if (prefab.income > 0) {
-                this.economyManager.addIncomeSource(prefab.income);
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                const object = hit.object;
+
+                // Check Ownership
+                if (object.userData.owner === this.landManager.userId) {
+                    // "Pick up" object -> Switch to build mode with this type
+                    const type = object.userData.type;
+                    if (type && this.prefabs[type]) {
+                        // Remove old object
+                        this.scene.remove(object);
+                        this.objects = this.objects.filter(o => o !== object);
+
+                        // Switch to build mode
+                        this.setType(type);
+                        this.setMode('build');
+                        this.economyManager.showFloatingText("Moviendo...", "#0088ff");
+                    }
+                } else {
+                    this.economyManager.showFloatingText("¡No es tuyo!", "#ff0000");
+                }
             }
+            return;
         }
 
-        const object = new THREE.Mesh(prefab.geometry, prefab.material);
+        // --- BUILD MODE ---
+        if (this.mode === 'build') {
+            // 1. Check Land Ownership
+            if (this.landManager) {
+                const plot = this.landManager.getPlotAt(this.ghostMesh.position);
 
-        object.position.copy(this.ghostMesh.position);
-        object.rotation.y = this.rotation;
-        object.castShadow = true;
-        object.receiveShadow = true;
-        object.userData.type = this.currentType; // For SaveSystem
+                // Check if trying to build on street (no plot)
+                if (!plot) {
+                    this.economyManager.showFloatingText("¡No puedes construir en la calle!", "#ff0000");
+                    return;
+                }
 
-        this.scene.add(object);
-        this.objects.push(object);
+                // Check if player owns the plot
+                if (plot.owner !== this.landManager.userId) {
+                    this.economyManager.showFloatingText("¡Solo puedes construir en tu terreno!", "#ff0000");
+                    return;
+                }
+            }
 
-        // Visual feedback for placement
-        if (this.economyManager) {
-            this.economyManager.showFloatingText(`-${prefab.cost}`, "#ffd700");
+            // Check Cost
+            const prefab = this.prefabs[this.currentType];
+            if (this.economyManager) {
+                if (!this.economyManager.spend(prefab.cost)) {
+                    this.economyManager.showFloatingText("Insufficient Funds!", "#ff0000");
+                    return; // Cancel build
+                }
+
+                // Add Income
+                if (prefab.income > 0) {
+                    this.economyManager.addIncomeSource(prefab.income);
+                }
+            }
+
+            const object = new THREE.Mesh(prefab.geometry, prefab.material);
+
+            object.position.copy(this.ghostMesh.position);
+            object.rotation.y = this.rotation;
+            object.castShadow = true;
+            object.receiveShadow = true;
+            object.userData.type = this.currentType; // For SaveSystem
+            object.userData.owner = this.landManager.userId; // Save Ownership!
+
+            this.scene.add(object);
+            this.objects.push(object);
+
+            // Visual feedback for placement
+            if (this.economyManager) {
+                this.economyManager.showFloatingText(`-${prefab.cost}`, "#ffd700");
+            }
         }
     }
 }

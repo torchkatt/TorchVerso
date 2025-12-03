@@ -93,10 +93,10 @@ export class SceneManager {
         this.saveSystem = new SaveSystem(this);
 
         // 12. Auth (Connects everything)
-        this.authManager = new AuthManager((user) => {
-            // When logged in:
-            this.saveSystem.setUser(user); // Start saving
-            this.networkManager.setUser(user); // Start multiplayer
+        this.authManager = new AuthManager();
+        this.authManager.onAuthReady((user) => {
+            this.saveSystem.setUser(user); // Enable cloud saves
+            this.landManager.setUser(user.uid); // Set userId for land ownership
             this.chatManager.setUser(user); // Start chat
         });
 
@@ -379,7 +379,7 @@ export class SceneManager {
         if (!this.velocity) this.velocity = new THREE.Vector3();
         if (!this.direction) this.direction = new THREE.Vector3();
 
-        const speed = 10.0; // Movement speed
+        const speed = 3.5; // Realistic walking speed (reduced from 10.0)
 
         this.velocity.x -= this.velocity.x * 10.0 * delta;
         this.velocity.z -= this.velocity.z * 10.0 * delta;
@@ -388,8 +388,8 @@ export class SceneManager {
         this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
         this.direction.normalize();
 
-        if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * 400.0 * delta;
-        if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * 400.0 * delta;
+        if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * 150.0 * delta;
+        if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * 150.0 * delta;
 
         // Predict next position for collision
         const nextVelocity = this.velocity.clone().multiplyScalar(delta);

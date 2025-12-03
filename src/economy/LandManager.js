@@ -7,16 +7,22 @@ export class LandManager {
         this.domElement = domElement;
         this.plots = new Map(); // ID -> Plot Data
         this.playerWallet = 50000; // Initial funds for testing
+        this.userId = null; // Will be set by AuthManager
 
         // Rent configurations
         this.rentOptions = {
             '24h': { label: '24 Horas', duration: 24 * 60 * 60 * 1000, priceMultiplier: 0.01 },
             '1w': { label: '1 Semana', duration: 7 * 24 * 60 * 60 * 1000, priceMultiplier: 0.05 },
             '1m': { label: '1 Mes', duration: 30 * 24 * 60 * 60 * 1000, priceMultiplier: 0.15 },
-            '1y': { label: '1 Año', duration: 365 * 24 * 60 * 60 * 1000, priceMultiplier: 1.0 } // Renting for a year is basically buying price but temporary
+            '1y': { label: '1 Año', duration: 365 * 24 * 60 * 60 * 1000, priceMultiplier: 1.0 }
         };
 
         this.initUI();
+    }
+
+    setUser(userId) {
+        this.userId = userId;
+        console.log("LandManager: User set", userId);
     }
 
     initUI() {
@@ -218,11 +224,19 @@ export class LandManager {
         const plot = this.plots.get(plotId);
         if (!plot) return;
 
-        if (plot.owner === 'player') {
+        // Check if plot is owned by this player
+        if (plot.owner && plot.owner === this.userId) {
             this.showNotification('¡Ya eres dueño de este terreno!', 'info');
             return;
         }
 
+        // Check if plot is owned by another player
+        if (plot.owner && plot.owner !== this.userId) {
+            this.showNotification('Este terreno ya está ocupado por otro jugador', 'warning');
+            return;
+        }
+
+        // Plot is available for purchase/rent
         this.currentInteractionPlotId = plotId;
         this.openModal(plot);
     }
@@ -266,7 +280,7 @@ export class LandManager {
             this.playerWallet -= plot.price;
             this.updateWalletUI();
 
-            plot.owner = 'player';
+            plot.owner = this.userId; // Use real userId
             plot.rentExpires = null;
             this.updatePlotVisuals(plotId);
 
@@ -286,7 +300,7 @@ export class LandManager {
             this.playerWallet -= rentPrice;
             this.updateWalletUI();
 
-            plot.owner = 'player';
+            plot.owner = this.userId; // Use real userId
             plot.rentExpires = Date.now() + option.duration;
             this.updatePlotVisuals(plotId);
 
@@ -302,13 +316,15 @@ export class LandManager {
         if (!plot) return;
 
         // Color scheme:
-        // Green = Owned (purchased)
-        // Yellow = Rented
+        // Green = Owned by me (purchased)
+        // Yellow = Rented by me
+        // Purple = Owned by other player
         // Cyan/Blue = For Sale
 
         let borderColor, groundColor, signColor;
 
-        if (plot.owner === 'player') {
+        if (plot.owner === this.userId) {
+            // Owned by current player
             if (plot.rentExpires) {
                 // Rented (temporary)
                 borderColor = 0xffff00; // Yellow
@@ -320,6 +336,11 @@ export class LandManager {
                 groundColor = 0x00ff00;
                 signColor = 0x00aa00;
             }
+        } else if (plot.owner) {
+            // Owned by another player
+            borderColor = 0xff00ff; // Purple/Magenta
+            groundColor = 0x8800ff;
+            signColor = 0xaa00aa;
         } else {
             // For sale
             borderColor = 0x00ffff; // Cyan
@@ -330,14 +351,14 @@ export class LandManager {
         // Update ground plane
         if (plot.mesh) {
             plot.mesh.material.color.setHex(groundColor);
-            plot.mesh.material.opacity = plot.owner === 'player' ? 0.3 : 0.1;
+            plot.mesh.material.opacity = plot.owner === this.userId ? 0.3 : 0.1;
         }
 
         // Update border
         if (plot.borderGroup) {
             plot.borderGroup.children.forEach(edge => {
                 edge.material.color.setHex(borderColor);
-                edge.material.opacity = plot.owner === 'player' ? 1.0 : 0.8;
+                edge.material.opacity = plot.owner === this.userId ? 1.0 : 0.8;
             });
         }
 
@@ -345,7 +366,7 @@ export class LandManager {
         if (plot.signMesh) {
             plot.signMesh.material.color.setHex(signColor);
             plot.signMesh.material.emissive.setHex(signColor);
-            plot.signMesh.material.emissiveIntensity = plot.owner === 'player' ? 0.3 : 0.6;
+            plot.signMesh.material.emissiveIntensity = plot.owner === this.userId ? 0.3 : 0.6;
         }
     }
 
@@ -360,7 +381,8 @@ export class LandManager {
     checkRentExpirations() {
         const now = Date.now();
         for (const [id, plot] of this.plots) {
-            if (plot.owner === 'player' && plot.rentExpires && now > plot.rentExpires) {
+            // Only check expiration for plots owned by this user
+            if (plot.owner === this.userId && plot.rentExpires && now > plot.rentExpires) {
                 plot.owner = null;
                 plot.rentExpires = null;
                 this.updatePlotVisuals(id);
@@ -377,18 +399,20 @@ export class LandManager {
     }
 
     exportData() {
-        const ownedPlots = [];
+        // Export ALL plots with ownership info for multiplayer sync
+        const plotsData = [];
         for (const [id, plot] of this.plots) {
-            if (plot.owner === 'player') {
-                ownedPlots.push({
+            if (plot.owner) {
+                plotsData.push({
                     id: plot.id,
+                    owner: plot.owner, // Store actual userId
                     rentExpires: plot.rentExpires
                 });
             }
         }
         return {
             wallet: this.playerWallet,
-            ownedPlots: ownedPlots
+            plots: plotsData // Changed from ownedPlots to plots
         };
     }
 
@@ -400,15 +424,16 @@ export class LandManager {
             this.updateWalletUI();
         }
 
-        if (data.ownedPlots) {
-            data.ownedPlots.forEach(savedPlot => {
-                const plot = this.plots.get(savedPlot.id);
-                if (plot) {
-                    plot.owner = 'player';
-                    plot.rentExpires = savedPlot.rentExpires;
-                    this.updatePlotVisuals(savedPlot.id);
-                }
-            });
-        }
+        // Import plots data (compatibility with both old and new format)
+        const plotsToImport = data.plots || data.ownedPlots || [];
+
+        plotsToImport.forEach(savedPlot => {
+            const plot = this.plots.get(savedPlot.id);
+            if (plot) {
+                plot.owner = savedPlot.owner || this.userId; // Use saved owner or current userId
+                plot.rentExpires = savedPlot.rentExpires;
+                this.updatePlotVisuals(savedPlot.id);
+            }
+        });
     }
 }
